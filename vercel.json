@@ -20,13 +20,3 @@
     "NODE_ENV": "production"
   }
 }
-
-// Start the server if running directly
-if (require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-}
-
-// Export the Express API for serverless environments
-module.exports = app;
