@@ -4,9 +4,21 @@ const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
 const sessionManager = require('./sessionManager');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Configure proxy for Binance API requests
+const setupBinanceProxy = () => {
+  // Using Bright Data residential proxy for Mumbai, India
+  const proxy = 'http://brd-customer-hl_13e40dd3-zone-residential_proxy1_india-country-in-city-mumbai:18g5mw4nfmwj@brd.superproxy.io:33335';
+  
+  // Allow self-signed certificates if needed (only use in development)
+  // process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'; // Uncomment only if absolutely necessary
+  
+  return new HttpsProxyAgent(proxy);
+};
 
 // Middleware - Enhanced CORS configuration with detailed logging
 app.use((req, res, next) => {
