@@ -88,6 +88,10 @@ app.post('/api/exchange/connect', async (req, res) => {
         .digest('hex');
       
       try {
+        console.log('Attempting to connect to Binance API with the following request:');
+        console.log(`URL: https://api.binance.com/api/v3/account?${queryString}&signature=${signature}` );
+        console.log('Headers:', { 'X-MBX-APIKEY': '[REDACTED]' });
+        
         const response = await axios({
           method: 'GET',
           url: `https://api.binance.com/api/v3/account?${queryString}&signature=${signature}`,
@@ -95,6 +99,10 @@ app.post('/api/exchange/connect', async (req, res) => {
             'X-MBX-APIKEY': apiKey
           }
         } );
+        
+        console.log('Binance API connection successful');
+        console.log('Response status:', response.status);
+        console.log('Response headers:', response.headers);
         
         // Create a session with encrypted API keys
         const userId = 'user123'; // In production, this would be the authenticated user's ID
@@ -119,7 +127,7 @@ app.post('/api/exchange/connect', async (req, res) => {
           status: error.response ? error.response.status : 'No status',
           statusText: error.response ? error.response.statusText : 'No status text',
           data: error.response ? error.response.data : 'No data',
-          headers: error.response ? error.response.headers : 'No headers',
+          headers: error.response ? JSON.stringify(error.response.headers) : 'No headers',
           request: {
             method: 'GET',
             url: `https://api.binance.com/api/v3/account?timestamp=${timestamp}`,
@@ -127,7 +135,7 @@ app.post('/api/exchange/connect', async (req, res) => {
               'X-MBX-APIKEY': '[REDACTED]'
             }
           }
-        });
+        } );
         
         return res.status(400).json({
           success: false,
@@ -229,23 +237,39 @@ app.get('/api/exchange/balances', async (req, res) => {
         .update(queryString)
         .digest('hex');
       
-      const response = await axios({
-        method: 'GET',
-        url: `https://api.binance.com/api/v3/account?${queryString}&signature=${signature}`,
-        headers: {
-          'X-MBX-APIKEY': keys.apiKey
-        }
-      } );
-      
-      // Filter out zero balances
-      const balances = response.data.balances.filter(b => 
-        parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
-      );
-      
-      return res.json({
-        success: true,
-        data: balances
-      });
+      try {
+        console.log('Fetching Binance account balances');
+        const response = await axios({
+          method: 'GET',
+          url: `https://api.binance.com/api/v3/account?${queryString}&signature=${signature}`,
+          headers: {
+            'X-MBX-APIKEY': keys.apiKey
+          }
+        } );
+        
+        // Filter out zero balances
+        const balances = response.data.balances.filter(b => 
+          parseFloat(b.free) > 0 || parseFloat(b.locked) > 0
+        );
+        
+        return res.json({
+          success: true,
+          data: balances
+        });
+      } catch (error) {
+        console.error('Error fetching Binance balances:', {
+          status: error.response ? error.response.status : 'No status',
+          statusText: error.response ? error.response.statusText : 'No status text',
+          data: error.response ? error.response.data : 'No data',
+          headers: error.response ? JSON.stringify(error.response.headers) : 'No headers'
+        });
+        
+        return res.status(400).json({
+          success: false,
+          message: error.response ? `Binance error: ${JSON.stringify(error.response.data)}` : 'Failed to fetch balances',
+          error: error.response ? error.response.data : error.message
+        });
+      }
     } else if (keys.exchange === 'hyperliquid') {
       // Implement Hyperliquid balance retrieval
       return res.json({
@@ -300,76 +324,93 @@ app.get('/api/exchange/portfolio', async (req, res) => {
         .update(queryString)
         .digest('hex');
       
-      // Get account information
-      const accountResponse = await axios({
-        method: 'GET',
-        url: `https://api.binance.com/api/v3/account?${queryString}&signature=${signature}`,
-        headers: {
-          'X-MBX-APIKEY': keys.apiKey
-        }
-      } );
-      
-      // Get ticker prices for all assets
-      const tickerResponse = await axios({
-        method: 'GET',
-        url: 'https://api.binance.com/api/v3/ticker/price'
-      } );
-      
-      const prices = {};
-      tickerResponse.data.forEach(ticker => {
-        prices[ticker.symbol] = parseFloat(ticker.price);
-      });
-      
-      // Calculate portfolio value
-      let totalValue = 0;
-      const assets = [];
-      
-      accountResponse.data.balances.forEach(balance => {
-        const asset = balance.asset;
-        const free = parseFloat(balance.free);
-        const locked = parseFloat(balance.locked);
-        const total = free + locked;
+      try {
+        // Get account information
+        console.log('Fetching Binance account information for portfolio value');
+        const accountResponse = await axios({
+          method: 'GET',
+          url: `https://api.binance.com/api/v3/account?${queryString}&signature=${signature}`,
+          headers: {
+            'X-MBX-APIKEY': keys.apiKey
+          }
+        } );
         
-        if (total > 0) {
-          let assetValue = 0;
+        // Get ticker prices for all assets
+        console.log('Fetching Binance ticker prices');
+        const tickerResponse = await axios({
+          method: 'GET',
+          url: 'https://api.binance.com/api/v3/ticker/price'
+        } );
+        
+        const prices = {};
+        tickerResponse.data.forEach(ticker => {
+          prices[ticker.symbol] = parseFloat(ticker.price);
+        });
+        
+        // Calculate portfolio value
+        let totalValue = 0;
+        const assets = [];
+        
+        accountResponse.data.balances.forEach(balance => {
+          const asset = balance.asset;
+          const free = parseFloat(balance.free);
+          const locked = parseFloat(balance.locked);
+          const total = free + locked;
           
-          // For USDT and stablecoins, use face value
-          if (asset === 'USDT' || asset === 'USDC' || asset === 'BUSD' || asset === 'DAI') {
-            assetValue = total;
-          } 
-          // For other assets, find a USDT pair if available
-          else {
-            const usdtPair = `${asset}USDT`;
-            if (prices[usdtPair]) {
-              assetValue = total * prices[usdtPair];
-            } else {
-              // Try BTC pair and then convert BTC to USDT
-              const btcPair = `${asset}BTC`;
-              if (prices[btcPair] && prices['BTCUSDT']) {
-                assetValue = total * prices[btcPair] * prices['BTCUSDT'];
+          if (total > 0) {
+            let assetValue = 0;
+            
+            // For USDT and stablecoins, use face value
+            if (asset === 'USDT' || asset === 'USDC' || asset === 'BUSD' || asset === 'DAI') {
+              assetValue = total;
+            } 
+            // For other assets, find a USDT pair if available
+            else {
+              const usdtPair = `${asset}USDT`;
+              if (prices[usdtPair]) {
+                assetValue = total * prices[usdtPair];
+              } else {
+                // Try BTC pair and then convert BTC to USDT
+                const btcPair = `${asset}BTC`;
+                if (prices[btcPair] && prices['BTCUSDT']) {
+                  assetValue = total * prices[btcPair] * prices['BTCUSDT'];
+                }
               }
             }
+            
+            totalValue += assetValue;
+            
+            assets.push({
+              asset,
+              free,
+              locked,
+              total,
+              valueUSDT: assetValue
+            });
           }
-          
-          totalValue += assetValue;
-          
-          assets.push({
-            asset,
-            free,
-            locked,
-            total,
-            valueUSDT: assetValue
-          });
-        }
-      });
-      
-      return res.json({
-        success: true,
-        data: {
-          totalValueUSDT: totalValue,
-          assets: assets.sort((a, b) => b.valueUSDT - a.valueUSDT) // Sort by value descending
-        }
-      });
+        });
+        
+        return res.json({
+          success: true,
+          data: {
+            totalValueUSDT: totalValue,
+            assets: assets.sort((a, b) => b.valueUSDT - a.valueUSDT) // Sort by value descending
+          }
+        });
+      } catch (error) {
+        console.error('Error fetching portfolio value:', {
+          status: error.response ? error.response.status : 'No status',
+          statusText: error.response ? error.response.statusText : 'No status text',
+          data: error.response ? error.response.data : 'No data',
+          headers: error.response ? JSON.stringify(error.response.headers) : 'No headers'
+        });
+        
+        return res.status(400).json({
+          success: false,
+          message: error.response ? `Binance error: ${JSON.stringify(error.response.data)}` : 'Failed to fetch portfolio value',
+          error: error.response ? error.response.data : error.message
+        });
+      }
     } else if (keys.exchange === 'hyperliquid') {
       // Implement Hyperliquid portfolio value calculation
       return res.json({
@@ -428,6 +469,7 @@ app.get('/api/exchange/positions', async (req, res) => {
       
       // Get open positions from futures account
       try {
+        console.log('Fetching Binance futures positions');
         const positionsResponse = await axios({
           method: 'GET',
           url: `https://fapi.binance.com/fapi/v2/positionRisk?${queryString}&signature=${signature}`,
@@ -446,7 +488,12 @@ app.get('/api/exchange/positions', async (req, res) => {
           data: positions
         });
       } catch (futuresError) {
-        console.error('Error fetching futures positions:', futuresError);
+        console.error('Error fetching futures positions:', {
+          status: futuresError.response ? futuresError.response.status : 'No status',
+          statusText: futuresError.response ? futuresError.response.statusText : 'No status text',
+          data: futuresError.response ? futuresError.response.data : 'No data',
+          headers: futuresError.response ? JSON.stringify(futuresError.response.headers) : 'No headers'
+        });
         
         // If futures API fails, return empty positions
         return res.json({
@@ -510,6 +557,7 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
           .digest('hex');
         
         // Get account information
+        console.log('Fetching Binance account information for portfolio history');
         const accountResponse = await axios({
           method: 'GET',
           url: `https://api.binance.com/api/v3/account?${queryString}&signature=${signature}`,
@@ -519,6 +567,7 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
         } );
         
         // Get ticker prices for all assets
+        console.log('Fetching Binance ticker prices for portfolio history');
         const tickerResponse = await axios({
           method: 'GET',
           url: 'https://api.binance.com/api/v3/ticker/price'
@@ -560,39 +609,6 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
           }
         });
         
-<<<<<<< HEAD
-        return res.json({
-          success: true,
-          data: {
-            currentValueUSDT: currentValue
-          }
-        });
-      } catch (error) {
-        console.error('Error fetching portfolio history:', error);
-        res.status(500).json({
-          success: false,
-          message: 'Failed to fetch portfolio history',
-          error: error.message
-        });
-      }
-    } else if (keys.exchange === 'hyperliquid') {
-      // Implement Hyperliquid portfolio value calculation
-      return res.json({
-        success: true,
-        data: {
-          totalValueUSDT: 1000,
-          assets: [
-            { asset: 'USDT', free: 1000, locked: 0, total: 1000, valueUSDT: 1000 }
-          ]
-        }
-      });
-    } else {
-      return res.status(400).json({
-        success: false,
-        message: 'Unsupported exchange'
-      });
-    }
-=======
         // For historical data, we'll use Binance klines (candlestick) data for major assets
         // and estimate portfolio value based on price changes
         // This is a simplified approach - in a production app, you'd store actual portfolio values over time
@@ -625,6 +641,7 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
         }
         
         // Get BTC/USDT price history as a proxy for overall market
+        console.log(`Fetching Binance BTC/USDT klines for interval ${interval}`);
         const klinesResponse = await axios({
           method: 'GET',
           url: `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&startTime=${startTime}&endTime=${now}`
@@ -659,7 +676,12 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
         });
         
       } catch (error) {
-        console.error('Error fetching Binance portfolio history:', error);
+        console.error('Error fetching Binance portfolio history:', {
+          status: error.response ? error.response.status : 'No status',
+          statusText: error.response ? error.response.statusText : 'No status text',
+          data: error.response ? error.response.data : 'No data',
+          headers: error.response ? JSON.stringify(error.response.headers) : 'No headers'
+        });
         
         // Fall back to mock data if Binance API fails
         const mockData = generateMockPortfolioHistory(timeframe);
@@ -682,7 +704,6 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
       });
     }
     
->>>>>>> 6de9b120e6468bb7d1cba7aaf675a3c9655bc3ca
   } catch (error) {
     console.error('Error fetching portfolio history:', error);
     res.status(500).json({
@@ -691,9 +712,6 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
       error: error.message
     });
   }
-<<<<<<< HEAD
-});
-=======
 });
 
 // Helper function to generate mock portfolio history data
@@ -779,4 +797,3 @@ if (require.main === module) {
 
 // Export the Express API for serverless environments
 module.exports = app;
->>>>>>> 6de9b120e6468bb7d1cba7aaf675a3c9655bc3ca
