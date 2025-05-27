@@ -8,6 +8,16 @@ const sessionManager = require('./sessionManager');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Start the server if running directly
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export the Express API for serverless environments
+module.exports = app;
+
 // Middleware - Enhanced CORS configuration with detailed logging
 app.use((req, res, next) => {
   console.log(`Incoming request: ${req.method} ${req.path}`);
