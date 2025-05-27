@@ -24,7 +24,7 @@ app.use((req, res, next) => {
   ];
   
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
+  if (allowedOrigins.includes(origin )) {
     res.header('Access-Control-Allow-Origin', origin);
   } else {
     res.header('Access-Control-Allow-Origin', '*');
@@ -94,7 +94,7 @@ app.post('/api/exchange/connect', async (req, res) => {
           headers: {
             'X-MBX-APIKEY': apiKey
           }
-        });
+        } );
         
         // Create a session with encrypted API keys
         const userId = 'user123'; // In production, this would be the authenticated user's ID
@@ -235,7 +235,7 @@ app.get('/api/exchange/balances', async (req, res) => {
         headers: {
           'X-MBX-APIKEY': keys.apiKey
         }
-      });
+      } );
       
       // Filter out zero balances
       const balances = response.data.balances.filter(b => 
@@ -307,13 +307,13 @@ app.get('/api/exchange/portfolio', async (req, res) => {
         headers: {
           'X-MBX-APIKEY': keys.apiKey
         }
-      });
+      } );
       
       // Get ticker prices for all assets
       const tickerResponse = await axios({
         method: 'GET',
         url: 'https://api.binance.com/api/v3/ticker/price'
-      });
+      } );
       
       const prices = {};
       tickerResponse.data.forEach(ticker => {
@@ -434,7 +434,7 @@ app.get('/api/exchange/positions', async (req, res) => {
           headers: {
             'X-MBX-APIKEY': keys.apiKey
           }
-        });
+        } );
         
         // Filter out positions with zero amount
         const positions = positionsResponse.data.filter(position => 
@@ -516,13 +516,13 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
           headers: {
             'X-MBX-APIKEY': keys.apiKey
           }
-        });
+        } );
         
         // Get ticker prices for all assets
         const tickerResponse = await axios({
           method: 'GET',
           url: 'https://api.binance.com/api/v3/ticker/price'
-        });
+        } );
         
         const prices = {};
         tickerResponse.data.forEach(ticker => {
@@ -560,6 +560,7 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
           }
         });
         
+<<<<<<< HEAD
         return res.json({
           success: true,
           data: {
@@ -591,6 +592,97 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
         message: 'Unsupported exchange'
       });
     }
+=======
+        // For historical data, we'll use Binance klines (candlestick) data for major assets
+        // and estimate portfolio value based on price changes
+        // This is a simplified approach - in a production app, you'd store actual portfolio values over time
+        
+        // Determine interval and start time based on timeframe
+        let interval;
+        let startTime;
+        const now = Date.now();
+        
+        switch (timeframe) {
+          case '7d':
+            interval = '2h'; // 2-hour candles for 7 days
+            startTime = now - (7 * 24 * 60 * 60 * 1000);
+            break;
+          case '30d':
+            interval = '8h'; // 8-hour candles for 30 days
+            startTime = now - (30 * 24 * 60 * 60 * 1000);
+            break;
+          case '90d':
+            interval = '1d'; // 1-day candles for 90 days
+            startTime = now - (90 * 24 * 60 * 60 * 1000);
+            break;
+          case '1y':
+            interval = '3d'; // 3-day candles for 1 year
+            startTime = now - (365 * 24 * 60 * 60 * 1000);
+            break;
+          default: // 1d or any other value
+            interval = '1h'; // 1-hour candles for 1 day
+            startTime = now - (24 * 60 * 60 * 1000);
+        }
+        
+        // Get BTC/USDT price history as a proxy for overall market
+        const klinesResponse = await axios({
+          method: 'GET',
+          url: `https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&startTime=${startTime}&endTime=${now}`
+        } );
+        
+        // Generate portfolio history based on BTC price movements
+        // This is a simplified approach that assumes portfolio roughly follows BTC
+        const dataPoints = [];
+        const btcPrices = klinesResponse.data.map(candle => parseFloat(candle[4])); // Close price
+        const latestBtcPrice = btcPrices[btcPrices.length - 1];
+        
+        klinesResponse.data.forEach((candle, index) => {
+          const timestamp = candle[0]; // Open time
+          const btcPrice = parseFloat(candle[4]); // Close price
+          
+          // Estimate portfolio value based on BTC price ratio
+          // Add some randomness to make it more realistic
+          const btcRatio = btcPrice / latestBtcPrice;
+          const randomFactor = 1 + ((Math.random() * 2) - 1) / 100; // ±1% random variation
+          const estimatedValue = currentValue * btcRatio * randomFactor;
+          
+          dataPoints.push({
+            timestamp,
+            value: estimatedValue
+          });
+        });
+        
+        return res.json({
+          success: true,
+          data: dataPoints,
+          source: 'binance'
+        });
+        
+      } catch (error) {
+        console.error('Error fetching Binance portfolio history:', error);
+        
+        // Fall back to mock data if Binance API fails
+        const mockData = generateMockPortfolioHistory(timeframe);
+        
+        return res.json({
+          success: true,
+          data: mockData,
+          source: 'mock',
+          message: 'Using mock data due to Binance API error'
+        });
+      }
+    } else {
+      // For other exchanges or if no valid session, generate mock data
+      const mockData = generateMockPortfolioHistory(timeframe);
+      
+      return res.json({
+        success: true,
+        data: mockData,
+        source: 'mock'
+      });
+    }
+    
+>>>>>>> 6de9b120e6468bb7d1cba7aaf675a3c9655bc3ca
   } catch (error) {
     console.error('Error fetching portfolio history:', error);
     res.status(500).json({
@@ -599,4 +691,92 @@ app.get('/api/exchange/portfolio/history', async (req, res) => {
       error: error.message
     });
   }
+<<<<<<< HEAD
 });
+=======
+});
+
+// Helper function to generate mock portfolio history data
+function generateMockPortfolioHistory(timeframe) {
+  const now = Date.now();
+  const dataPoints = [];
+  let numPoints = 24; // Default to 24 hours
+  let interval = 60 * 60 * 1000; // 1 hour in milliseconds
+  
+  switch (timeframe) {
+    case '7d':
+      numPoints = 7 * 24;
+      interval = 60 * 60 * 1000; // 1 hour
+      break;
+    case '30d':
+      numPoints = 30;
+      interval = 24 * 60 * 60 * 1000; // 1 day
+      break;
+    case '90d':
+      numPoints = 90;
+      interval = 24 * 60 * 60 * 1000; // 1 day
+      break;
+    case '1y':
+      numPoints = 52;
+      interval = 7 * 24 * 60 * 60 * 1000; // 1 week
+      break;
+    default: // 1d or any other value
+      numPoints = 24;
+      interval = 60 * 60 * 1000; // 1 hour
+  }
+  
+  // Generate mock data with some randomness but a general trend
+  let baseValue = 10000; // Starting portfolio value
+  
+  for (let i = numPoints - 1; i >= 0; i--) {
+    const timestamp = now - (i * interval);
+    
+    // Add some random fluctuation (-2% to +2%)
+    const randomFactor = 1 + ((Math.random() * 4) - 2) / 100;
+    baseValue = baseValue * randomFactor;
+    
+    dataPoints.push({
+      timestamp,
+      value: baseValue
+    });
+  }
+  
+  return dataPoints;
+}
+
+// Logout / Disconnect exchange
+app.post('/api/session/logout', (req, res) => {
+  const sessionToken = getSessionToken(req);
+  
+  if (!sessionToken) {
+    return res.status(400).json({
+      success: false,
+      message: 'No session token provided'
+    });
+  }
+  
+  const result = sessionManager.deleteSession(sessionToken);
+  
+  if (result) {
+    return res.json({
+      success: true,
+      message: 'Successfully logged out'
+    });
+  } else {
+    return res.status(400).json({
+      success: false,
+      message: 'Failed to logout, session not found'
+    });
+  }
+});
+
+// Start the server if running directly
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export the Express API for serverless environments
+module.exports = app;
+>>>>>>> 6de9b120e6468bb7d1cba7aaf675a3c9655bc3ca
